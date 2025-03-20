@@ -1,46 +1,55 @@
 import cv2
 import mediapipe as mp
-import time
-from deteccionGestos import identify_gesture  # Importamos la función
+from deteccionGestos import identify_gesture
+from letrasDinamicas import detectar_letra_dinamica
 
-# Inicializa MediaPipe Hands
 mp_hands = mp.solutions.hands
-hands = mp_hands.Hands(static_image_mode=False, max_num_hands=2, min_detection_confidence=0.5)
-mp_draw = mp.solutions.drawing_utils
+hands = mp_hands.Hands(min_detection_confidence=0.5, min_tracking_confidence=0.5)
 
-# Inicializa la cámara
 cap = cv2.VideoCapture(0)
 
-while True:
+prev_x, prev_y = None, None
+buffer_movimiento = []
+contador_visibilidad = 0
+letra_actual = ""
+
+while cap.isOpened():
     ret, frame = cap.read()
     if not ret:
         break
-
+    
     frame = cv2.flip(frame, 1)
-    frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-    results = hands.process(frame_rgb)
 
+    # Procesar el frame con MediaPipe para obtener landmarks
+    rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+    results = hands.process(rgb_frame)
+
+    letra_estatica = None
     if results.multi_hand_landmarks:
-          for hand_landmarks, hand_info in zip(results.multi_hand_landmarks, results.multi_handedness):
-            mp_draw.draw_landmarks(frame, hand_landmarks, mp_hands.HAND_CONNECTIONS)
+        for hand_landmarks in results.multi_hand_landmarks:
+            handedness = results.multi_handedness[0].classification[0].label  # Detecta si es "Left" o "Right"
+            letra_estatica = identify_gesture(hand_landmarks.landmark, handedness)
 
-            lateralidad = hand_info.classification[0].label  # "Right" o "Left"
-            confidence = hand_info.classification[0].score  # Confianza de la clasificación
-            # Llama a la función de identificación de gestos
-            gesture = identify_gesture(hand_landmarks.landmark, lateralidad)
-            
-             # Mostrar si es mano derecha o izquierda en la parte superior derecha
-            text = f'{lateralidad} ({confidence:.2f})'
-            cv2.putText(frame, text, (frame.shape[1] - 200, 50),  # Posición en la esquina superior derecha
-                        cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 0), 2)
+    # Detectar letras dinámicas (como la "Z")
+    frame, buffer_movimiento, prev_x, prev_y, letra_dinamica = detectar_letra_dinamica(frame, buffer_movimiento, prev_x, prev_y)
 
-            # Mostrar texto solo si se detecta un gesto
-            if gesture is not None:
-                cv2.putText(frame, f'Gesto: {gesture}', (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
-                
-    cv2.imshow('Video', frame)
-    if cv2.waitKey(1) & 0xFF == 27:
+    # Mostrar la letra detectada (prioridad a la dinámica)
+    if letra_dinamica:
+        letra_actual = letra_dinamica
+        contador_visibilidad = 30
+    elif letra_estatica:
+        letra_actual = letra_estatica
+        contador_visibilidad = 30
+
+    if contador_visibilidad > 0:
+        cv2.putText(frame, letra_actual, (50, 100), cv2.FONT_HERSHEY_SIMPLEX, 2, (0, 255, 0), 3)
+        contador_visibilidad -= 1
+
+    cv2.imshow("Detección de Gestos", frame)
+    
+    if cv2.waitKey(1) & 0xFF == ord('q'):
         break
 
 cap.release()
 cv2.destroyAllWindows()
+

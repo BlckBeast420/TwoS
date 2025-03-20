@@ -213,5 +213,3 @@ def identify_gesture(landmarks, lateralidad):
         return "Y"
     
     
-    # Deteccion de la letra "Z" later 
-    
